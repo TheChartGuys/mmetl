@@ -78,11 +78,16 @@ type Config struct {
 	// This field is not exported and only exposed internally to let unit tests
 	// mock the current time.
 	maxConcurrentRequests int
+
+	//This variable will disable checking for the cluster-info end point and
+	//split the payload at node level for multi node setup
+	NoProxySupport bool
 }
 
 // This constant sets the default endpoint to which client instances send
 // messages if none was explictly set.
-const DefaultEndpoint = "https://api.segment.io"
+
+const DefaultEndpoint = ""
 
 // This constant sets the default flush interval used by client instances if
 // none was explicitly set.
@@ -142,7 +147,7 @@ func makeConfig(c Config) Config {
 	}
 
 	if c.RetryAfter == nil {
-		c.RetryAfter = backo.DefaultBacko().Duration
+		c.RetryAfter = backo.NewBacko(time.Millisecond*100, 2, 1, time.Second*30).Duration
 	}
 
 	if c.uid == nil {

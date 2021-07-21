@@ -34,23 +34,26 @@ const (
 )
 
 type Channel struct {
-	Id               string                 `json:"id"`
-	CreateAt         int64                  `json:"create_at"`
-	UpdateAt         int64                  `json:"update_at"`
-	DeleteAt         int64                  `json:"delete_at"`
-	TeamId           string                 `json:"team_id"`
-	Type             string                 `json:"type"`
-	DisplayName      string                 `json:"display_name"`
-	Name             string                 `json:"name"`
-	Header           string                 `json:"header"`
-	Purpose          string                 `json:"purpose"`
-	LastPostAt       int64                  `json:"last_post_at"`
-	TotalMsgCount    int64                  `json:"total_msg_count"`
-	ExtraUpdateAt    int64                  `json:"extra_update_at"`
-	CreatorId        string                 `json:"creator_id"`
-	SchemeId         *string                `json:"scheme_id"`
-	Props            map[string]interface{} `json:"props" db:"-"`
-	GroupConstrained *bool                  `json:"group_constrained"`
+	Id                string                 `json:"id"`
+	CreateAt          int64                  `json:"create_at"`
+	UpdateAt          int64                  `json:"update_at"`
+	DeleteAt          int64                  `json:"delete_at"`
+	TeamId            string                 `json:"team_id"`
+	Type              string                 `json:"type"`
+	DisplayName       string                 `json:"display_name"`
+	Name              string                 `json:"name"`
+	Header            string                 `json:"header"`
+	Purpose           string                 `json:"purpose"`
+	LastPostAt        int64                  `json:"last_post_at"`
+	TotalMsgCount     int64                  `json:"total_msg_count"`
+	ExtraUpdateAt     int64                  `json:"extra_update_at"`
+	CreatorId         string                 `json:"creator_id"`
+	SchemeId          *string                `json:"scheme_id"`
+	Props             map[string]interface{} `json:"props" db:"-"`
+	GroupConstrained  *bool                  `json:"group_constrained"`
+	Shared            *bool                  `json:"shared"`
+	TotalMsgCountRoot int64                  `json:"total_msg_count_root"`
+	PolicyID          *string                `json:"policy_id" db:"-"`
 }
 
 type ChannelWithTeamData struct {
@@ -120,12 +123,35 @@ type ChannelModeratedRolesPatch struct {
 // PerPage number of results per page, if paginated.
 //
 type ChannelSearchOpts struct {
-	NotAssociatedToGroup   string
-	ExcludeDefaultChannels bool
-	IncludeDeleted         bool
-	ExcludeChannelNames    []string
-	Page                   *int
-	PerPage                *int
+	NotAssociatedToGroup     string
+	ExcludeDefaultChannels   bool
+	IncludeDeleted           bool
+	Deleted                  bool
+	ExcludeChannelNames      []string
+	TeamIds                  []string
+	GroupConstrained         bool
+	ExcludeGroupConstrained  bool
+	PolicyID                 string
+	ExcludePolicyConstrained bool
+	IncludePolicyID          bool
+	Public                   bool
+	Private                  bool
+	Page                     *int
+	PerPage                  *int
+}
+
+type ChannelMemberCountByGroup struct {
+	GroupId                     string `db:"-" json:"group_id"`
+	ChannelMemberCount          int64  `db:"-" json:"channel_member_count"`
+	ChannelMemberTimezonesCount int64  `db:"-" json:"channel_member_timezones_count"`
+}
+
+type ChannelOption func(channel *Channel)
+
+func WithID(ID string) ChannelOption {
+	return func(channel *Channel) {
+		channel.Id = ID
+	}
 }
 
 func (o *Channel) DeepCopy() *Channel {
@@ -181,12 +207,18 @@ func ChannelModerationsPatchFromJson(data io.Reader) []*ChannelModerationPatch {
 	return o
 }
 
+func ChannelMemberCountsByGroupFromJson(data io.Reader) []*ChannelMemberCountByGroup {
+	var o []*ChannelMemberCountByGroup
+	json.NewDecoder(data).Decode(&o)
+	return o
+}
+
 func (o *Channel) Etag() string {
 	return Etag(o.Id, o.UpdateAt)
 }
 
 func (o *Channel) IsValid() *AppError {
-	if len(o.Id) != 26 {
+	if !IsValidId(o.Id) {
 		return NewAppError("Channel.IsValid", "model.channel.is_valid.id.app_error", nil, "", http.StatusBadRequest)
 	}
 
@@ -235,6 +267,9 @@ func (o *Channel) PreSave() {
 		o.Id = NewId()
 	}
 
+	o.Name = SanitizeUnicode(o.Name)
+	o.DisplayName = SanitizeUnicode(o.DisplayName)
+
 	o.CreateAt = GetMillis()
 	o.UpdateAt = o.CreateAt
 	o.ExtraUpdateAt = 0
@@ -242,6 +277,8 @@ func (o *Channel) PreSave() {
 
 func (o *Channel) PreUpdate() {
 	o.UpdateAt = GetMillis()
+	o.Name = SanitizeUnicode(o.Name)
+	o.DisplayName = SanitizeUnicode(o.DisplayName)
 }
 
 func (o *Channel) IsGroupOrDirect() bool {
@@ -290,6 +327,10 @@ func (o *Channel) IsGroupConstrained() bool {
 	return o.GroupConstrained != nil && *o.GroupConstrained
 }
 
+func (o *Channel) IsShared() bool {
+	return o.Shared != nil && *o.Shared
+}
+
 func (o *Channel) GetOtherUserIdForDM(userId string) string {
 	if o.Type != CHANNEL_DIRECT {
 		return ""
@@ -313,9 +354,8 @@ func (o *Channel) GetOtherUserIdForDM(userId string) string {
 func GetDMNameFromIds(userId1, userId2 string) string {
 	if userId1 > userId2 {
 		return userId2 + "__" + userId1
-	} else {
-		return userId1 + "__" + userId2
 	}
+	return userId1 + "__" + userId2
 }
 
 func GetGroupDisplayNameFromUsers(users []*User, truncate bool) string {

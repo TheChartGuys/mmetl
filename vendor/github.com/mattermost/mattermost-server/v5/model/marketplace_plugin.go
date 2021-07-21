@@ -20,8 +20,12 @@ type BaseMarketplacePlugin struct {
 	IconData        string             `json:"icon_data"`
 	DownloadURL     string             `json:"download_url"`
 	ReleaseNotesURL string             `json:"release_notes_url"`
-	Labels          []MarketplaceLabel `json:"labels"`
-	Signature       string             `json:"signature"` // Signature represents a signature of a plugin saved in base64 encoding.
+	Labels          []MarketplaceLabel `json:"labels,omitempty"`
+	Hosting         string             `json:"hosting"`       // Indicated if the plugin is limited to a certain hosting type
+	AuthorType      string             `json:"author_type"`   // The maintainer of the plugin
+	ReleaseStage    string             `json:"release_stage"` // The stage in the software release cycle that the plugin is in
+	Enterprise      bool               `json:"enterprise"`    // Indicated if the plugin is an enterprise plugin
+	Signature       string             `json:"signature"`     // Signature represents a signature of a plugin saved in base64 encoding.
 	Manifest        *Manifest          `json:"manifest"`
 }
 
@@ -74,11 +78,17 @@ func (plugin *BaseMarketplacePlugin) DecodeSignature() (io.ReadSeeker, error) {
 
 // MarketplacePluginFilter describes the parameters to request a list of plugins.
 type MarketplacePluginFilter struct {
-	Page          int
-	PerPage       int
-	Filter        string
-	ServerVersion string
-	LocalOnly     bool
+	Page                 int
+	PerPage              int
+	Filter               string
+	ServerVersion        string
+	BuildEnterpriseReady bool
+	EnterprisePlugins    bool
+	Cloud                bool
+	LocalOnly            bool
+	Platform             string
+	PluginId             string
+	ReturnAllVersions    bool
 }
 
 // ApplyToURL modifies the given url to include query string parameters for the request.
@@ -90,7 +100,13 @@ func (filter *MarketplacePluginFilter) ApplyToURL(u *url.URL) {
 	}
 	q.Add("filter", filter.Filter)
 	q.Add("server_version", filter.ServerVersion)
+	q.Add("build_enterprise_ready", strconv.FormatBool(filter.BuildEnterpriseReady))
+	q.Add("enterprise_plugins", strconv.FormatBool(filter.EnterprisePlugins))
+	q.Add("cloud", strconv.FormatBool(filter.Cloud))
 	q.Add("local_only", strconv.FormatBool(filter.LocalOnly))
+	q.Add("platform", filter.Platform)
+	q.Add("plugin_id", filter.PluginId)
+	q.Add("return_all_versions", strconv.FormatBool(filter.ReturnAllVersions))
 	u.RawQuery = q.Encode()
 }
 

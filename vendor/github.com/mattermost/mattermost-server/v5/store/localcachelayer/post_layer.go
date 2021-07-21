@@ -4,13 +4,12 @@
 package localcachelayer
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/mattermost/mattermost-server/v5/store"
-
-	"fmt"
 )
 
 type LocalCachePostStore struct {
@@ -19,7 +18,7 @@ type LocalCachePostStore struct {
 }
 
 func (s *LocalCachePostStore) handleClusterInvalidateLastPostTime(msg *model.ClusterMessage) {
-	if msg.Data == CLEAR_CACHE_MESSAGE_DATA {
+	if msg.Data == ClearCacheMessageData {
 		s.rootStore.lastPostTimeCache.Purge()
 	} else {
 		s.rootStore.lastPostTimeCache.Remove(msg.Data)
@@ -27,7 +26,7 @@ func (s *LocalCachePostStore) handleClusterInvalidateLastPostTime(msg *model.Clu
 }
 
 func (s *LocalCachePostStore) handleClusterInvalidateLastPosts(msg *model.ClusterMessage) {
-	if msg.Data == CLEAR_CACHE_MESSAGE_DATA {
+	if msg.Data == ClearCacheMessageData {
 		s.rootStore.postLastPostsCache.Purge()
 	} else {
 		s.rootStore.postLastPostsCache.Remove(msg.Data)
@@ -60,14 +59,15 @@ func (s LocalCachePostStore) InvalidateLastPostTimeCache(channelId string) {
 	}
 }
 
-func (s LocalCachePostStore) GetEtag(channelId string, allowFromCache bool) string {
+func (s LocalCachePostStore) GetEtag(channelId string, allowFromCache, collapsedThreads bool) string {
 	if allowFromCache {
-		if lastTime := s.rootStore.doStandardReadCache(s.rootStore.lastPostTimeCache, channelId); lastTime != nil {
-			return fmt.Sprintf("%v.%v", model.CurrentVersion, lastTime.(int64))
+		var lastTime int64
+		if err := s.rootStore.doStandardReadCache(s.rootStore.lastPostTimeCache, channelId, &lastTime); err == nil {
+			return fmt.Sprintf("%v.%v", model.CurrentVersion, lastTime)
 		}
 	}
 
-	result := s.PostStore.GetEtag(channelId, allowFromCache)
+	result := s.PostStore.GetEtag(channelId, allowFromCache, collapsedThreads)
 
 	splittedResult := strings.Split(result, ".")
 
@@ -78,11 +78,12 @@ func (s LocalCachePostStore) GetEtag(channelId string, allowFromCache bool) stri
 	return result
 }
 
-func (s LocalCachePostStore) GetPostsSince(options model.GetPostsSinceOptions, allowFromCache bool) (*model.PostList, *model.AppError) {
+func (s LocalCachePostStore) GetPostsSince(options model.GetPostsSinceOptions, allowFromCache bool) (*model.PostList, error) {
 	if allowFromCache {
 		// If the last post in the channel's time is less than or equal to the time we are getting posts since,
 		// we can safely return no posts.
-		if lastTime := s.rootStore.doStandardReadCache(s.rootStore.lastPostTimeCache, options.ChannelId); lastTime != nil && lastTime.(int64) <= options.Time {
+		var lastTime int64
+		if err := s.rootStore.doStandardReadCache(s.rootStore.lastPostTimeCache, options.ChannelId, &lastTime); err == nil && lastTime <= options.Time {
 			list := model.NewPostList()
 			return list, nil
 		}
@@ -103,7 +104,7 @@ func (s LocalCachePostStore) GetPostsSince(options model.GetPostsSinceOptions, a
 	return list, err
 }
 
-func (s LocalCachePostStore) GetPosts(options model.GetPostsOptions, allowFromCache bool) (*model.PostList, *model.AppError) {
+func (s LocalCachePostStore) GetPosts(options model.GetPostsOptions, allowFromCache bool) (*model.PostList, error) {
 	if !allowFromCache {
 		return s.PostStore.GetPosts(options, allowFromCache)
 	}
@@ -111,8 +112,9 @@ func (s LocalCachePostStore) GetPosts(options model.GetPostsOptions, allowFromCa
 	offset := options.PerPage * options.Page
 	// Caching only occurs on limits of 30 and 60, the common limits requested by MM clients
 	if offset == 0 && (options.PerPage == 60 || options.PerPage == 30) {
-		if cacheItem := s.rootStore.doStandardReadCache(s.rootStore.postLastPostsCache, fmt.Sprintf("%s%v", options.ChannelId, options.PerPage)); cacheItem != nil {
-			return cacheItem.(*model.PostList), nil
+		var cacheItem *model.PostList
+		if err := s.rootStore.doStandardReadCache(s.rootStore.postLastPostsCache, fmt.Sprintf("%s%v", options.ChannelId, options.PerPage), &cacheItem); err == nil {
+			return cacheItem, nil
 		}
 	}
 

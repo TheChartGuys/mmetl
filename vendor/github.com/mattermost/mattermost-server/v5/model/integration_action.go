@@ -16,6 +16,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -46,6 +47,11 @@ type PostAction struct {
 
 	// If the action is disabled.
 	Disabled bool `json:"disabled,omitempty"`
+
+	// Style defines a text and border style.
+	// Supported values are "default", "primary", "success", "good", "warning", "danger"
+	// and any hex color.
+	Style string `json:"style,omitempty"`
 
 	// DataSource indicates the data source for the select action. If left
 	// empty, the select is populated from Options. Other supported values
@@ -119,13 +125,19 @@ func (p *PostAction) Equals(input *PostAction) bool {
 
 	for key, value := range p.Integration.Context {
 		inputValue, ok := input.Integration.Context[key]
-
 		if !ok {
 			return false
 		}
 
-		if value != inputValue {
-			return false
+		switch inputValue.(type) {
+		case string, bool, int, float64:
+			if value != inputValue {
+				return false
+			}
+		default:
+			if !reflect.DeepEqual(value, inputValue) {
+				return false
+			}
 		}
 	}
 
@@ -382,7 +394,7 @@ func (o *Post) StripActionIntegrations() {
 func (o *Post) GetAction(id string) *PostAction {
 	for _, attachment := range o.Attachments() {
 		for _, action := range attachment.Actions {
-			if action.Id == id {
+			if action != nil && action.Id == id {
 				return action
 			}
 		}
@@ -397,7 +409,7 @@ func (o *Post) GenerateActionIds() {
 	if attachments, ok := o.GetProp("attachments").([]*SlackAttachment); ok {
 		for _, attachment := range attachments {
 			for _, action := range attachment.Actions {
-				if action.Id == "" {
+				if action != nil && action.Id == "" {
 					action.Id = NewId()
 				}
 			}

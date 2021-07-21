@@ -4,21 +4,29 @@
 package app
 
 import (
+	"io"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/pkg/errors"
+
+	"github.com/mattermost/mattermost-server/v5/model"
+	"github.com/mattermost/mattermost-server/v5/utils"
 )
 
 const (
-	// HTTP_REQUEST_TIMEOUT defines a high timeout for downloading large files
+	// HTTPRequestTimeout defines a high timeout for downloading large files
 	// from an external URL to avoid slow connections from failing to install.
-	HTTP_REQUEST_TIMEOUT = 1 * time.Hour
+	HTTPRequestTimeout = 1 * time.Hour
 )
 
 func (a *App) DownloadFromURL(downloadURL string) ([]byte, error) {
+	return a.Srv().downloadFromURL(downloadURL)
+}
+
+func (s *Server) downloadFromURL(downloadURL string) ([]byte, error) {
 	if !model.IsValidHttpUrl(downloadURL) {
 		return nil, errors.Errorf("invalid url %s", downloadURL)
 	}
@@ -27,17 +35,33 @@ func (a *App) DownloadFromURL(downloadURL string) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Errorf("failed to parse url %s", downloadURL)
 	}
-	if !*a.Config().PluginSettings.AllowInsecureDownloadUrl && u.Scheme != "https" {
+	if !*s.Config().PluginSettings.AllowInsecureDownloadUrl && u.Scheme != "https" {
 		return nil, errors.Errorf("insecure url not allowed %s", downloadURL)
 	}
 
-	client := a.HTTPService().MakeClient(true)
-	client.Timeout = HTTP_REQUEST_TIMEOUT
+	client := s.HTTPService.MakeClient(true)
+	client.Timeout = HTTPRequestTimeout
 
-	resp, err := client.Get(downloadURL)
+	var resp *http.Response
+	err = utils.ProgressiveRetry(func() error {
+		resp, err = client.Get(downloadURL)
+
+		if err != nil {
+			return errors.Wrapf(err, "failed to fetch from %s", downloadURL)
+		}
+
+		if !(resp.StatusCode >= 200 && resp.StatusCode < 300) {
+			_, _ = io.Copy(ioutil.Discard, resp.Body)
+			_ = resp.Body.Close()
+			return errors.Errorf("failed to fetch from %s", downloadURL)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to fetch from %s", downloadURL)
+		return nil, errors.Wrap(err, "download failed after multiple retries.")
 	}
+
 	defer resp.Body.Close()
 
 	return ioutil.ReadAll(resp.Body)

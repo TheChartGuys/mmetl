@@ -11,6 +11,13 @@ import (
 	"strings"
 )
 
+const (
+	USERNAME = "Username"
+)
+
+//msgp:tuple TeamMember
+// This struct's serializer methods are auto-generated. If a new field is added/removed,
+// please run make gen-serialized.
 type TeamMember struct {
 	TeamId        string `json:"team_id"`
 	UserId        string `json:"user_id"`
@@ -22,26 +29,44 @@ type TeamMember struct {
 	ExplicitRoles string `json:"explicit_roles"`
 }
 
+//msgp:ignore TeamUnread
 type TeamUnread struct {
-	TeamId       string `json:"team_id"`
-	MsgCount     int64  `json:"msg_count"`
-	MentionCount int64  `json:"mention_count"`
+	TeamId           string `json:"team_id"`
+	MsgCount         int64  `json:"msg_count"`
+	MentionCount     int64  `json:"mention_count"`
+	MentionCountRoot int64  `json:"mention_count_root"`
+	MsgCountRoot     int64  `json:"msg_count_root"`
 }
 
+//msgp:ignore TeamMemberForExport
 type TeamMemberForExport struct {
 	TeamMember
 	TeamName string
 }
 
+//msgp:ignore TeamMemberWithError
 type TeamMemberWithError struct {
 	UserId string      `json:"user_id"`
 	Member *TeamMember `json:"member"`
 	Error  *AppError   `json:"error"`
 }
 
+//msgp:ignore EmailInviteWithError
 type EmailInviteWithError struct {
 	Email string    `json:"email"`
 	Error *AppError `json:"error"`
+}
+
+//msgp:ignore TeamMembersGetOptions
+type TeamMembersGetOptions struct {
+	// Sort the team members. Accepts "Username", but defaults to "Id".
+	Sort string
+
+	// If true, exclude team members whose corresponding user is deleted.
+	ExcludeDeletedUsers bool
+
+	// Restrict to search in a list of teams and channels
+	ViewRestrictions *ViewUsersRestrictions
 }
 
 func (o *TeamMember) ToJson() string {
@@ -83,11 +108,11 @@ func EmailInviteWithErrorToEmails(o []*EmailInviteWithError) []string {
 }
 
 func EmailInviteWithErrorToJson(o []*EmailInviteWithError) string {
-	if b, err := json.Marshal(o); err != nil {
+	b, err := json.Marshal(o)
+	if err != nil {
 		return "[]"
-	} else {
-		return string(b)
 	}
+	return string(b)
 }
 
 func EmailInviteWithErrorToString(o *EmailInviteWithError) string {
@@ -105,11 +130,11 @@ func TeamMembersWithErrorToTeamMembers(o []*TeamMemberWithError) []*TeamMember {
 }
 
 func TeamMembersWithErrorToJson(o []*TeamMemberWithError) string {
-	if b, err := json.Marshal(o); err != nil {
+	b, err := json.Marshal(o)
+	if err != nil {
 		return "[]"
-	} else {
-		return string(b)
 	}
+	return string(b)
 }
 
 func TeamMemberWithErrorToString(o *TeamMemberWithError) string {
@@ -123,11 +148,11 @@ func TeamMembersWithErrorFromJson(data io.Reader) []*TeamMemberWithError {
 }
 
 func TeamMembersToJson(o []*TeamMember) string {
-	if b, err := json.Marshal(o); err != nil {
+	b, err := json.Marshal(o)
+	if err != nil {
 		return "[]"
-	} else {
-		return string(b)
 	}
+	return string(b)
 }
 
 func TeamMembersFromJson(data io.Reader) []*TeamMember {
@@ -137,11 +162,11 @@ func TeamMembersFromJson(data io.Reader) []*TeamMember {
 }
 
 func TeamsUnreadToJson(o []*TeamUnread) string {
-	if b, err := json.Marshal(o); err != nil {
+	b, err := json.Marshal(o)
+	if err != nil {
 		return "[]"
-	} else {
-		return string(b)
 	}
+	return string(b)
 }
 
 func TeamsUnreadFromJson(data io.Reader) []*TeamUnread {
@@ -152,11 +177,11 @@ func TeamsUnreadFromJson(data io.Reader) []*TeamUnread {
 
 func (o *TeamMember) IsValid() *AppError {
 
-	if len(o.TeamId) != 26 {
+	if !IsValidId(o.TeamId) {
 		return NewAppError("TeamMember.IsValid", "model.team_member.is_valid.team_id.app_error", nil, "", http.StatusBadRequest)
 	}
 
-	if len(o.UserId) != 26 {
+	if !IsValidId(o.UserId) {
 		return NewAppError("TeamMember.IsValid", "model.team_member.is_valid.user_id.app_error", nil, "", http.StatusBadRequest)
 	}
 
