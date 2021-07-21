@@ -1,4 +1,4 @@
-module github.com/mattermost/mmetl
+module github.com/TheChartGuys/mmetl
 
 go 1.13
 
